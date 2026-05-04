@@ -372,7 +372,7 @@ bool OFBrowserMessageDecode(uint16_t type, const uint8_t *payload, size_t payloa
             return true;
         case OFBrowserMessageTextInputFocus: {
             uint8_t has_focus = 0;
-            bool ok = OFReadString32(&cursor, &out_message->as.text_focus.field_id) && OFReadU8(&cursor, &has_focus);
+            bool ok = OFReadUUID(&cursor, &out_message->as.text_focus.field_id) && OFReadU8(&cursor, &has_focus);
             out_message->as.text_focus.has_focus = has_focus != 0;
             return ok;
         }
@@ -380,7 +380,7 @@ bool OFBrowserMessageDecode(uint16_t type, const uint8_t *payload, size_t payloa
             return OFReadString32(&cursor, &out_message->as.text_command.command);
         case OFBrowserMessageSetCursorPosition: {
             uint8_t modify = 0;
-            bool ok = OFReadString32(&cursor, &out_message->as.cursor_position.field_id) &&
+            bool ok = OFReadUUID(&cursor, &out_message->as.cursor_position.field_id) &&
                       OFReadU64(&cursor, &out_message->as.cursor_position.position) &&
                       OFReadU8(&cursor, &modify);
             out_message->as.cursor_position.modify_selection = modify != 0;
@@ -582,7 +582,7 @@ bool OFEncodeTextCursorUpdate(const OFTextCursorSnapshot *cursors, size_t cursor
     OFByteWriter payload = {0};
     bool ok = OFWriteU32(&payload, (uint32_t)cursor_count);
     for (size_t i = 0; ok && i < cursor_count; i++) {
-        ok = OFWriteStringView32(&payload, cursors[i].field_id) &&
+        ok = OFWriteUUID(&payload, cursors[i].field_id) &&
              OFWriteF32(&payload, (float)cursors[i].rect.origin.x) &&
              OFWriteF32(&payload, (float)cursors[i].rect.origin.y) &&
              OFWriteF32(&payload, (float)cursors[i].rect.size.width) &&

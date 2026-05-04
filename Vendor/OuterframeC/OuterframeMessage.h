@@ -173,7 +173,7 @@ typedef struct {
 } OFPasteboardItemView;
 
 typedef struct {
-    OFStringView field_id;
+    OFUUID field_id;
     CGRect rect;
     bool visible;
 } OFTextCursorSnapshot;
@@ -201,9 +201,9 @@ typedef struct {
         struct { OFUUID request_id; OFDataView image_data; bool has_image_data; uint32_t width; uint32_t height; bool success; OFStringView error_message; bool has_error_message; } image_response;
         struct { OFStringView text; bool has_replacement_range; uint64_t replacement_location; uint64_t replacement_length; } text_input;
         struct { OFStringView text; uint64_t selected_location; uint64_t selected_length; bool has_replacement_range; uint64_t replacement_location; uint64_t replacement_length; } marked_text;
-        struct { OFStringView field_id; bool has_focus; } text_focus;
+        struct { OFUUID field_id; bool has_focus; } text_focus;
         struct { OFStringView command; } text_command;
-        struct { OFStringView field_id; uint64_t position; bool modify_selection; } cursor_position;
+        struct { OFUUID field_id; uint64_t position; bool modify_selection; } cursor_position;
         struct { OFDataView appearance_archive; } appearance;
         struct { bool value; } boolean_update;
         struct { OFUUID request_id; } request;
