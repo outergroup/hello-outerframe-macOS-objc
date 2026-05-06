@@ -266,9 +266,10 @@ static bool OFDecodeInitialize(OFCursor *cursor, OFInitializeContent *initialize
     for (uint16_t i = 0; i < arg_count; i++) {
         uint8_t kind = 0;
         OFDataView arg_data = {0};
-        if (!OFReadU8(cursor, &kind) || !OFReadDataReference(cursor, &arg_data)) return false;
+        if (!OFReadDataReference(cursor, &arg_data)) return false;
 
         OFCursor arg = { arg_data.bytes, arg_data.length, 0 };
+        if (!OFReadU8(&arg, &kind)) return false;
         switch (kind) {
             case OFInitArgKindData:
                 initialize->has_data = OFReadDataReference(&arg, &initialize->data);
@@ -291,13 +292,12 @@ static bool OFDecodeInitialize(OFCursor *cursor, OFInitializeContent *initialize
                 initialize->proxy.password = proxy_password;
                 break;
             case OFInitArgKindProxyAuth: {
-                uint8_t has = 0;
-                if (!OFReadU8(&arg, &has)) return false;
-                has_proxy_username = has != 0;
-                if (has_proxy_username && !OFReadStringReference(&arg, &proxy_username)) return false;
-                if (!OFReadU8(&arg, &has)) return false;
-                has_proxy_password = has != 0;
-                if (has_proxy_password && !OFReadStringReference(&arg, &proxy_password)) return false;
+                uint8_t flags = 0;
+                if (!OFReadU8(&arg, &flags) ||
+                    !OFReadStringReference(&arg, &proxy_username) ||
+                    !OFReadStringReference(&arg, &proxy_password)) return false;
+                has_proxy_username = (flags & (1 << 0)) != 0;
+                has_proxy_password = (flags & (1 << 1)) != 0;
                 initialize->proxy.has_username = has_proxy_username;
                 initialize->proxy.username = proxy_username;
                 initialize->proxy.has_password = has_proxy_password;
@@ -313,9 +313,9 @@ static bool OFDecodeInitialize(OFCursor *cursor, OFInitializeContent *initialize
                 initialize->has_bundle_url = true;
                 break;
             case OFInitArgKindWindowIsActive: {
-                uint8_t raw = 0;
-                if (!OFReadU8(&arg, &raw)) return false;
-                initialize->window_is_active = raw != 0;
+                uint8_t flags = 0;
+                if (!OFReadU8(&arg, &flags)) return false;
+                initialize->window_is_active = (flags & (1 << 0)) != 0;
                 initialize->has_window_is_active = true;
                 break;
             }
@@ -345,11 +345,13 @@ static bool OFDecodePasteboardItems(OFCursor *cursor, OFPasteboardItemView **ite
     return true;
 }
 
-bool OFBrowserMessageDecode(uint16_t type, const uint8_t *payload, size_t payload_length, OFBrowserMessage *out_message) {
+bool OFBrowserMessageDecode(const uint8_t *message, size_t message_length, OFBrowserMessage *out_message) {
     if (!out_message) return false;
     memset(out_message, 0, sizeof(*out_message));
+    OFCursor cursor = { message, message_length, 0 };
+    uint16_t type = 0;
+    if (!OFReadU16(&cursor, &type)) return false;
     out_message->kind = type;
-    OFCursor cursor = { payload, payload_length, 0 };
 
     switch (type) {
         case OFBrowserMessageInitializeContent:
@@ -363,15 +365,22 @@ bool OFBrowserMessageDecode(uint16_t type, const uint8_t *payload, size_t payloa
         case OFBrowserMessageResizeContent:
             return OFReadF64(&cursor, &out_message->as.resize.width) &&
                    OFReadF64(&cursor, &out_message->as.resize.height);
-        case OFBrowserMessageMouseEvent:
-            return OFReadU8(&cursor, &out_message->as.mouse.kind) &&
-                   OFReadF32(&cursor, &out_message->as.mouse.x) &&
+        case OFBrowserMessageMouseDown:
+        case OFBrowserMessageRightMouseDown:
+            return OFReadF32(&cursor, &out_message->as.mouse.x) &&
                    OFReadF32(&cursor, &out_message->as.mouse.y) &&
                    OFReadU64(&cursor, &out_message->as.mouse.modifier_flags) &&
                    OFReadU32(&cursor, &out_message->as.mouse.click_count);
+        case OFBrowserMessageMouseDragged:
+        case OFBrowserMessageMouseUp:
+        case OFBrowserMessageMouseMoved:
+        case OFBrowserMessageRightMouseUp:
+            out_message->as.mouse.click_count = 0;
+            return OFReadF32(&cursor, &out_message->as.mouse.x) &&
+                   OFReadF32(&cursor, &out_message->as.mouse.y) &&
+                   OFReadU64(&cursor, &out_message->as.mouse.modifier_flags);
         case OFBrowserMessageScrollWheelEvent: {
-            uint8_t is_momentum = 0;
-            uint8_t is_precise = 0;
+            uint8_t flags = 0;
             bool ok = OFReadF32(&cursor, &out_message->as.scroll.x) &&
                       OFReadF32(&cursor, &out_message->as.scroll.y) &&
                       OFReadF32(&cursor, &out_message->as.scroll.delta_x) &&
@@ -379,21 +388,19 @@ bool OFBrowserMessageDecode(uint16_t type, const uint8_t *payload, size_t payloa
                       OFReadU64(&cursor, &out_message->as.scroll.modifier_flags) &&
                       OFReadU32(&cursor, &out_message->as.scroll.phase) &&
                       OFReadU32(&cursor, &out_message->as.scroll.momentum_phase) &&
-                      OFReadU8(&cursor, &is_momentum) &&
-                      OFReadU8(&cursor, &is_precise);
-            out_message->as.scroll.is_momentum = is_momentum != 0;
-            out_message->as.scroll.is_precise = is_precise != 0;
+                      OFReadU8(&cursor, &flags);
+            out_message->as.scroll.has_precise_scrolling_deltas = (flags & (1 << 0)) != 0;
             return ok;
         }
         case OFBrowserMessageKeyDown:
         case OFBrowserMessageKeyUp: {
-            uint8_t repeat = 0;
+            uint8_t flags = 0;
             bool ok = OFReadU16(&cursor, &out_message->as.key.key_code) &&
                       OFReadStringReference(&cursor, &out_message->as.key.characters) &&
                       OFReadStringReference(&cursor, &out_message->as.key.characters_ignoring_modifiers) &&
                       OFReadU64(&cursor, &out_message->as.key.modifier_flags) &&
-                      OFReadU8(&cursor, &repeat);
-            out_message->as.key.is_repeat = repeat != 0;
+                      OFReadU8(&cursor, &flags);
+            out_message->as.key.is_a_repeat = (flags & (1 << 0)) != 0;
             return ok;
         }
         case OFBrowserMessageMagnification:
@@ -408,65 +415,64 @@ bool OFBrowserMessageDecode(uint16_t type, const uint8_t *payload, size_t payloa
             return OFReadF32(&cursor, &out_message->as.point.x) &&
                    OFReadF32(&cursor, &out_message->as.point.y);
         case OFBrowserMessageImageWithSystemSymbolName: {
-            uint8_t success = 0, has_image = 0, has_error = 0;
+            uint8_t flags = 0;
             if (!OFReadUUID(&cursor, &out_message->as.image_response.request_id) ||
                 !OFReadU32(&cursor, &out_message->as.image_response.width) ||
                 !OFReadU32(&cursor, &out_message->as.image_response.height) ||
-                !OFReadU8(&cursor, &success) ||
-                !OFReadU8(&cursor, &has_image)) return false;
-            out_message->as.image_response.success = success != 0;
-            out_message->as.image_response.has_image_data = has_image != 0;
-            if (has_image && !OFReadDataReference(&cursor, &out_message->as.image_response.image_data)) return false;
-            if (!OFReadU8(&cursor, &has_error)) return false;
-            out_message->as.image_response.has_error_message = has_error != 0;
-            return !has_error || OFReadStringReference(&cursor, &out_message->as.image_response.error_message);
+                !OFReadU8(&cursor, &flags) ||
+                !OFReadDataReference(&cursor, &out_message->as.image_response.image_data) ||
+                !OFReadStringReference(&cursor, &out_message->as.image_response.error_message)) return false;
+            out_message->as.image_response.success = (flags & (1 << 0)) != 0;
+            out_message->as.image_response.has_image_data = (flags & (1 << 1)) != 0;
+            out_message->as.image_response.has_error_message = (flags & (1 << 2)) != 0;
+            return true;
         }
         case OFBrowserMessageTextInput: {
-            uint8_t has_range = 0;
+            uint8_t flags = 0;
             bool ok = OFReadStringReference(&cursor, &out_message->as.text_input.text) &&
-                      OFReadU8(&cursor, &has_range) &&
+                      OFReadU8(&cursor, &flags) &&
                       OFReadU64(&cursor, &out_message->as.text_input.replacement_location) &&
                       OFReadU64(&cursor, &out_message->as.text_input.replacement_length);
-            out_message->as.text_input.has_replacement_range = has_range != 0;
+            out_message->as.text_input.has_replacement_range = (flags & (1 << 0)) != 0;
             return ok;
         }
         case OFBrowserMessageSetMarkedText: {
-            uint8_t has_range = 0;
+            uint8_t flags = 0;
             bool ok = OFReadStringReference(&cursor, &out_message->as.marked_text.text) &&
                       OFReadU64(&cursor, &out_message->as.marked_text.selected_location) &&
                       OFReadU64(&cursor, &out_message->as.marked_text.selected_length) &&
-                      OFReadU8(&cursor, &has_range) &&
+                      OFReadU8(&cursor, &flags) &&
                       OFReadU64(&cursor, &out_message->as.marked_text.replacement_location) &&
                       OFReadU64(&cursor, &out_message->as.marked_text.replacement_length);
-            out_message->as.marked_text.has_replacement_range = has_range != 0;
+            out_message->as.marked_text.has_replacement_range = (flags & (1 << 0)) != 0;
             return ok;
         }
         case OFBrowserMessageUnmarkText:
         case OFBrowserMessageShutdown:
             return true;
         case OFBrowserMessageTextInputFocus: {
-            uint8_t has_focus = 0;
-            bool ok = OFReadUUID(&cursor, &out_message->as.text_focus.field_id) && OFReadU8(&cursor, &has_focus);
-            out_message->as.text_focus.has_focus = has_focus != 0;
+            uint8_t flags = 0;
+            bool ok = OFReadUUID(&cursor, &out_message->as.text_focus.field_id) && OFReadU8(&cursor, &flags);
+            out_message->as.text_focus.has_focus = (flags & (1 << 0)) != 0;
             return ok;
         }
         case OFBrowserMessageTextCommand:
             return OFReadStringReference(&cursor, &out_message->as.text_command.command);
         case OFBrowserMessageSetCursorPosition: {
-            uint8_t modify = 0;
+            uint8_t flags = 0;
             bool ok = OFReadUUID(&cursor, &out_message->as.cursor_position.field_id) &&
                       OFReadU64(&cursor, &out_message->as.cursor_position.position) &&
-                      OFReadU8(&cursor, &modify);
-            out_message->as.cursor_position.modify_selection = modify != 0;
+                      OFReadU8(&cursor, &flags);
+            out_message->as.cursor_position.modify_selection = (flags & (1 << 0)) != 0;
             return ok;
         }
         case OFBrowserMessageSystemAppearanceUpdate:
             return OFReadDataReference(&cursor, &out_message->as.appearance.appearance_archive);
         case OFBrowserMessageWindowActiveUpdate:
         case OFBrowserMessageViewFocusChanged: {
-            uint8_t raw = 0;
-            bool ok = OFReadU8(&cursor, &raw);
-            out_message->as.boolean_update.value = raw != 0;
+            uint8_t flags = 0;
+            bool ok = OFReadU8(&cursor, &flags);
+            out_message->as.boolean_update.value = (flags & (1 << 0)) != 0;
             return ok;
         }
         case OFBrowserMessageCopySelectedPasteboardRequest:
@@ -488,10 +494,11 @@ void OFBrowserMessageFree(OFBrowserMessage *message) {
 }
 
 bool OFEncodeFrame(uint16_t type, OFDataView payload, OFBuffer *out_frame) {
-    if (payload.length > UINT32_MAX) return false;
+    if (payload.length > UINT32_MAX - OFContentSocketMessageTypeLength) return false;
+    size_t message_length = OFContentSocketMessageTypeLength + payload.length;
     OFByteWriter writer = {0};
-    bool ok = OFWriteU16(&writer, type) &&
-              OFWriteU32(&writer, (uint32_t)payload.length) &&
+    bool ok = OFWriteU32(&writer, (uint32_t)message_length) &&
+              OFWriteU16(&writer, type) &&
               OFWriteBytes(&writer, payload.bytes, payload.length);
     if (!ok) {
         OFWriterFree(&writer);
@@ -518,7 +525,7 @@ static bool OFFinishOffsetPayload(uint16_t type, OFOffsetPayloadBuilder *payload
 
     for (size_t i = 0; i < payload->reference_count; i++) {
         OFPayloadReference reference = payload->references[i];
-        size_t offset = payload->fixed.length + reference.variable_offset;
+        size_t offset = OFContentSocketMessageTypeLength + payload->fixed.length + reference.variable_offset;
         if (offset > UINT32_MAX ||
             reference.length > UINT32_MAX ||
             reference.patch_offset > payload->fixed.length ||
@@ -594,20 +601,16 @@ bool OFEncodeGetImageWithSystemSymbolName(OFUUID request_id, const char *symbol_
 
 bool OFEncodePageMetadata(bool start_page, const char *title_or_null, const uint8_t *icon_png_or_null, size_t icon_png_length, uint32_t icon_width, uint32_t icon_height, OFBuffer *out_frame) {
     OFOffsetPayloadBuilder payload = {0};
-    bool ok = true;
-    if (title_or_null) {
-        ok = ok && OFPayloadWriteU8(&payload, 1) && OFPayloadWriteCStringReference(&payload, title_or_null);
-    } else {
-        ok = ok && OFPayloadWriteU8(&payload, 0);
-    }
-    if (icon_png_or_null) {
-        ok = ok && OFPayloadWriteU8(&payload, 1) &&
-             OFPayloadWriteU32(&payload, icon_width) &&
-             OFPayloadWriteU32(&payload, icon_height) &&
-             OFPayloadWriteDataReference(&payload, icon_png_or_null, icon_png_length);
-    } else {
-        ok = ok && OFPayloadWriteU8(&payload, 0);
-    }
+    uint8_t flags = 0;
+    if (title_or_null) flags |= 1 << 0;
+    if (icon_png_or_null) flags |= 1 << 1;
+    bool ok = OFPayloadWriteU8(&payload, flags) &&
+              OFPayloadWriteCStringReference(&payload, title_or_null ? title_or_null : "") &&
+              OFPayloadWriteU32(&payload, icon_png_or_null ? icon_width : 0) &&
+              OFPayloadWriteU32(&payload, icon_png_or_null ? icon_height : 0) &&
+              OFPayloadWriteDataReference(&payload,
+                                          icon_png_or_null ? icon_png_or_null : (const uint8_t *)"",
+                                          icon_png_or_null ? icon_png_length : 0);
     if (!ok) {
         OFPayloadFree(&payload);
         return false;
@@ -617,12 +620,11 @@ bool OFEncodePageMetadata(bool start_page, const char *title_or_null, const uint
 
 bool OFEncodeAccessibilitySnapshotResponse(OFUUID request_id, const uint8_t *snapshot_or_null, size_t snapshot_length, OFBuffer *out_frame) {
     OFOffsetPayloadBuilder payload = {0};
-    bool ok = OFPayloadWriteUUID(&payload, request_id);
-    if (snapshot_or_null) {
-        ok = ok && OFPayloadWriteU8(&payload, 1) && OFPayloadWriteDataReference(&payload, snapshot_or_null, snapshot_length);
-    } else {
-        ok = ok && OFPayloadWriteU8(&payload, 0);
-    }
+    bool ok = OFPayloadWriteUUID(&payload, request_id) &&
+              OFPayloadWriteU8(&payload, snapshot_or_null ? 1 << 0 : 0) &&
+              OFPayloadWriteDataReference(&payload,
+                                          snapshot_or_null ? snapshot_or_null : (const uint8_t *)"",
+                                          snapshot_or_null ? snapshot_length : 0);
     if (!ok) {
         OFPayloadFree(&payload);
         return false;
@@ -672,8 +674,10 @@ bool OFEncodeCopySelectedPasteboardResponse(OFUUID request_id, const OFPasteboar
 bool OFEncodePasteboardCapabilities(bool can_copy, bool can_cut, const OFStringView *pasteboard_types, size_t type_count, OFBuffer *out_frame) {
     if (type_count > UINT16_MAX) type_count = UINT16_MAX;
     OFOffsetPayloadBuilder payload = {0};
-    bool ok = OFPayloadWriteU8(&payload, can_copy ? 1 : 0) &&
-              OFPayloadWriteU8(&payload, can_cut ? 1 : 0) &&
+    uint8_t flags = 0;
+    if (can_copy) flags |= 1 << 0;
+    if (can_cut) flags |= 1 << 1;
+    bool ok = OFPayloadWriteU8(&payload, flags) &&
               OFPayloadWriteU16(&payload, (uint16_t)type_count);
     for (size_t i = 0; ok && i < type_count; i++) {
         ok = OFPayloadWriteStringViewReference(&payload, pasteboard_types[i]);
@@ -695,7 +699,7 @@ bool OFEncodeTextCursorUpdate(const OFTextCursorSnapshot *cursors, size_t cursor
              OFWriteF32(&payload, (float)cursors[i].rect.origin.y) &&
              OFWriteF32(&payload, (float)cursors[i].rect.size.width) &&
              OFWriteF32(&payload, (float)cursors[i].rect.size.height) &&
-             OFWriteU8(&payload, cursors[i].visible ? 1 : 0);
+             OFWriteU8(&payload, cursors[i].visible ? 1 << 0 : 0);
     }
     if (!ok) {
         OFWriterFree(&payload);
@@ -706,17 +710,14 @@ bool OFEncodeTextCursorUpdate(const OFTextCursorSnapshot *cursors, size_t cursor
 
 bool OFEncodeOpenNewWindow(const char *url, const char *display_string_or_null, bool has_preferred_size, float preferred_width, float preferred_height, OFBuffer *out_frame) {
     OFOffsetPayloadBuilder payload = {0};
-    bool ok = OFPayloadWriteCStringReference(&payload, url);
-    if (display_string_or_null) {
-        ok = ok && OFPayloadWriteU8(&payload, 1) && OFPayloadWriteCStringReference(&payload, display_string_or_null);
-    } else {
-        ok = ok && OFPayloadWriteU8(&payload, 0);
-    }
-    if (has_preferred_size) {
-        ok = ok && OFPayloadWriteU8(&payload, 1) && OFPayloadWriteF32(&payload, preferred_width) && OFPayloadWriteF32(&payload, preferred_height);
-    } else {
-        ok = ok && OFPayloadWriteU8(&payload, 0);
-    }
+    uint8_t flags = 0;
+    if (display_string_or_null) flags |= 1 << 0;
+    if (has_preferred_size) flags |= 1 << 1;
+    bool ok = OFPayloadWriteCStringReference(&payload, url) &&
+              OFPayloadWriteU8(&payload, flags) &&
+              OFPayloadWriteCStringReference(&payload, display_string_or_null ? display_string_or_null : "") &&
+              OFPayloadWriteF32(&payload, has_preferred_size ? preferred_width : 0) &&
+              OFPayloadWriteF32(&payload, has_preferred_size ? preferred_height : 0);
     if (!ok) {
         OFPayloadFree(&payload);
         return false;

@@ -157,11 +157,11 @@ static void OFHostHandleAccessibilitySnapshotRequest(OFHost *host, OFUUID reques
     OFBufferFree(&snapshot);
 }
 
-static void OFHostSocketMessage(OFContentSocket *socket, uint16_t type, const uint8_t *payload, size_t payload_length, void *context) {
+static void OFHostSocketMessage(OFContentSocket *socket, const uint8_t *message_data, size_t message_length, void *context) {
     (void)socket;
     OFHost *host = context;
     OFBrowserMessage message;
-    if (!OFBrowserMessageDecode(type, payload, payload_length, &message)) {
+    if (!OFBrowserMessageDecode(message_data, message_length, &message)) {
         return;
     }
 

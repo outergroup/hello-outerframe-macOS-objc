@@ -123,19 +123,18 @@ static void OFSocketStopOnQueue(OFContentSocket *socket, bool notify_closed) {
 static void OFSocketProcessIncoming(OFContentSocket *socket) {
     while (socket->incoming.length >= OFContentSocketHeaderLength) {
         uint8_t *bytes = socket->incoming.bytes;
-        uint16_t type = OFReadUInt16LE(bytes);
-        uint32_t payload_length = OFReadUInt32LE(bytes + sizeof(uint16_t));
-        size_t total_length = OFContentSocketHeaderLength + (size_t)payload_length;
+        uint32_t message_length = OFReadUInt32LE(bytes);
+        size_t total_length = OFContentSocketHeaderLength + (size_t)message_length;
         if (socket->incoming.length < total_length) break;
 
-        uint8_t *payload_copy = NULL;
-        if (payload_length > 0) {
-            payload_copy = malloc(payload_length);
-            if (!payload_copy) {
+        uint8_t *message_copy = NULL;
+        if (message_length > 0) {
+            message_copy = malloc(message_length);
+            if (!message_copy) {
                 OFSocketStopOnQueue(socket, true);
                 return;
             }
-            memcpy(payload_copy, bytes + OFContentSocketHeaderLength, payload_length);
+            memcpy(message_copy, bytes + OFContentSocketHeaderLength, message_length);
         }
         OFSocketBufferRemovePrefix(&socket->incoming, total_length);
 
@@ -143,11 +142,11 @@ static void OFSocketProcessIncoming(OFContentSocket *socket) {
             OFContentSocketCallbacks callbacks = socket->callbacks;
             void *context = socket->context;
             dispatch_async(dispatch_get_main_queue(), ^{
-                callbacks.message(socket, type, payload_copy, payload_length, context);
-                free(payload_copy);
+                callbacks.message(socket, message_copy, message_length, context);
+                free(message_copy);
             });
         } else {
-            free(payload_copy);
+            free(message_copy);
         }
     }
 }

@@ -10,7 +10,10 @@
 extern "C" {
 #endif
 
-enum { OFContentSocketHeaderLength = sizeof(uint16_t) + sizeof(uint32_t) };
+enum {
+    OFContentSocketHeaderLength = sizeof(uint32_t),
+    OFContentSocketMessageTypeLength = sizeof(uint16_t)
+};
 
 typedef struct {
     const uint8_t *bytes;
@@ -53,61 +56,56 @@ enum {
 
 typedef uint16_t OFBrowserMessageKind;
 enum {
-    OFBrowserMessageInitializeContent = 50,
-    OFBrowserMessageDisplayLinkFired = 2,
-    OFBrowserMessageDisplayLinkCallbackRegistered = 15,
-    OFBrowserMessageResizeContent = 7,
-    OFBrowserMessageMouseEvent = 8,
-    OFBrowserMessageScrollWheelEvent = 47,
-    OFBrowserMessageKeyDown = 9,
-    OFBrowserMessageKeyUp = 10,
-    OFBrowserMessageMagnification = 12,
-    OFBrowserMessageMagnificationEnded = 13,
-    OFBrowserMessageQuickLook = 20,
-    OFBrowserMessageImageWithSystemSymbolName = 21,
-    OFBrowserMessageTextInput = 22,
-    OFBrowserMessageSetMarkedText = 23,
-    OFBrowserMessageUnmarkText = 24,
-    OFBrowserMessageTextInputFocus = 25,
-    OFBrowserMessageTextCommand = 26,
-    OFBrowserMessageSetCursorPosition = 27,
-    OFBrowserMessageSystemAppearanceUpdate = 38,
-    OFBrowserMessageWindowActiveUpdate = 39,
-    OFBrowserMessageViewFocusChanged = 49,
-    OFBrowserMessageCopySelectedPasteboardRequest = 40,
-    OFBrowserMessagePasteboardContentDelivered = 45,
-    OFBrowserMessageAccessibilitySnapshotRequest = 46,
-    OFBrowserMessageShutdown = 51,
+    OFBrowserMessageInitializeContent = 1000,
+    OFBrowserMessageResizeContent = 1001,
+    OFBrowserMessageShutdown = 1002,
+    OFBrowserMessageDisplayLinkFired = 1003,
+    OFBrowserMessageDisplayLinkCallbackRegistered = 1004,
+    OFBrowserMessageSystemAppearanceUpdate = 1005,
+    OFBrowserMessageWindowActiveUpdate = 1006,
+    OFBrowserMessageViewFocusChanged = 1007,
+    OFBrowserMessageMouseDown = 1008,
+    OFBrowserMessageMouseDragged = 1009,
+    OFBrowserMessageMouseUp = 1010,
+    OFBrowserMessageMouseMoved = 1011,
+    OFBrowserMessageRightMouseDown = 1012,
+    OFBrowserMessageRightMouseUp = 1013,
+    OFBrowserMessageScrollWheelEvent = 1014,
+    OFBrowserMessageKeyDown = 1015,
+    OFBrowserMessageKeyUp = 1016,
+    OFBrowserMessageMagnification = 1017,
+    OFBrowserMessageMagnificationEnded = 1018,
+    OFBrowserMessageQuickLook = 1019,
+    OFBrowserMessageTextInput = 1020,
+    OFBrowserMessageSetMarkedText = 1021,
+    OFBrowserMessageUnmarkText = 1022,
+    OFBrowserMessageTextInputFocus = 1023,
+    OFBrowserMessageTextCommand = 1024,
+    OFBrowserMessageSetCursorPosition = 1025,
+    OFBrowserMessageImageWithSystemSymbolName = 1026,
+    OFBrowserMessageCopySelectedPasteboardRequest = 1027,
+    OFBrowserMessagePasteboardContentDelivered = 1028,
+    OFBrowserMessageAccessibilitySnapshotRequest = 1029,
 };
 
 typedef uint16_t OFContentMessageKind;
 enum {
-    OFContentMessageStartDisplayLink = 17,
-    OFContentMessageStopDisplayLink = 18,
-    OFContentMessageCursorUpdate = 28,
-    OFContentMessageInputModeUpdate = 29,
-    OFContentMessageShowContextMenu = 34,
-    OFContentMessageShowDefinition = 35,
-    OFContentMessageGetImageWithSystemSymbolName = 36,
-    OFContentMessageTextCursorUpdate = 37,
-    OFContentMessagePageMetadataUpdate = 38,
-    OFContentMessageStartPageMetadataUpdate = 39,
-    OFContentMessageCopySelectedPasteboardResponse = 40,
-    OFContentMessageOpenNewWindow = 41,
-    OFContentMessageEditingCapabilitiesUpdate = 44,
-    OFContentMessageAccessibilitySnapshotResponse = 45,
-    OFContentMessageAccessibilityTreeChanged = 46,
-    OFContentMessageHapticFeedback = 48,
-};
-
-typedef uint8_t OFMouseEventKind;
-enum {
-    OFMouseEventKindMouseDown = 1,
-    OFMouseEventKindMouseDragged = 2,
-    OFMouseEventKindMouseUp = 3,
-    OFMouseEventKindMouseMoved = 4,
-    OFMouseEventKindRightMouseDown = 5,
-    OFMouseEventKindRightMouseUp = 6,
+    OFContentMessageStartDisplayLink = 2000,
+    OFContentMessageStopDisplayLink = 2001,
+    OFContentMessageCursorUpdate = 2002,
+    OFContentMessageInputModeUpdate = 2003,
+    OFContentMessageTextCursorUpdate = 2004,
+    OFContentMessageShowContextMenu = 2005,
+    OFContentMessageShowDefinition = 2006,
+    OFContentMessageGetImageWithSystemSymbolName = 2007,
+    OFContentMessageHapticFeedback = 2008,
+    OFContentMessageCopySelectedPasteboardResponse = 2009,
+    OFContentMessageEditingCapabilitiesUpdate = 2010,
+    OFContentMessageAccessibilitySnapshotResponse = 2011,
+    OFContentMessageAccessibilityTreeChanged = 2012,
+    OFContentMessageOpenNewWindow = 2013,
+    OFContentMessagePageMetadataUpdate = 2017,
+    OFContentMessageStartPageMetadataUpdate = 2018,
 };
 
 typedef uint8_t OFCursorType;
@@ -183,7 +181,7 @@ typedef struct {
     OFStringView characters;
     OFStringView characters_ignoring_modifiers;
     uint64_t modifier_flags;
-    bool is_repeat;
+    bool is_a_repeat;
 } OFKeyEvent;
 
 typedef struct {
@@ -193,8 +191,8 @@ typedef struct {
         struct { uint64_t frame_number; double target_timestamp; } display_link_fired;
         struct { OFUUID callback_id; OFUUID browser_callback_id; } display_link_callback_registered;
         struct { double width; double height; } resize;
-        struct { OFMouseEventKind kind; float x; float y; uint64_t modifier_flags; uint32_t click_count; } mouse;
-        struct { float x; float y; float delta_x; float delta_y; uint64_t modifier_flags; uint32_t phase; uint32_t momentum_phase; bool is_momentum; bool is_precise; } scroll;
+        struct { float x; float y; uint64_t modifier_flags; uint32_t click_count; } mouse;
+        struct { float x; float y; float delta_x; float delta_y; uint64_t modifier_flags; uint32_t phase; uint32_t momentum_phase; bool has_precise_scrolling_deltas; } scroll;
         OFKeyEvent key;
         struct { uint32_t surface_id; float magnification; float x; float y; float scroll_x; float scroll_y; } magnification;
         struct { float x; float y; } point;
@@ -211,7 +209,7 @@ typedef struct {
     } as;
 } OFBrowserMessage;
 
-bool OFBrowserMessageDecode(uint16_t type, const uint8_t *payload, size_t payload_length, OFBrowserMessage *out_message);
+bool OFBrowserMessageDecode(const uint8_t *message, size_t message_length, OFBrowserMessage *out_message);
 void OFBrowserMessageFree(OFBrowserMessage *message);
 
 bool OFEncodeFrame(uint16_t type, OFDataView payload, OFBuffer *out_frame);

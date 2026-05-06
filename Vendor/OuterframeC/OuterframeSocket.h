@@ -11,7 +11,7 @@ extern "C" {
 typedef struct OFContentSocket OFContentSocket;
 
 typedef struct {
-    void (*message)(OFContentSocket *socket, uint16_t type, const uint8_t *payload, size_t payload_length, void *context);
+    void (*message)(OFContentSocket *socket, const uint8_t *message, size_t message_length, void *context);
     void (*closed)(OFContentSocket *socket, void *context);
 } OFContentSocketCallbacks;
 
