@@ -152,9 +152,7 @@ static void HelloWorldHandleMessage(OFHost *host, const OFBrowserMessage *messag
             }
 
             HelloWorldSetAppearance(app, appearance);
-            CGFloat width = initialize->has_content_size ? initialize->content_width : 800;
-            CGFloat height = initialize->has_content_size ? initialize->content_height : 600;
-            app->current_size = CGSizeMake(width, height);
+            app->current_size = initialize->has_content_size ? initialize->content_size : CGSizeMake(800, 600);
 
             HelloWorldConfigureLayersIfNeeded(app);
             HelloWorldUpdateLayout(app);
@@ -170,7 +168,7 @@ static void HelloWorldHandleMessage(OFHost *host, const OFBrowserMessage *messag
         }
 
         case OFBrowserMessageResizeContent:
-            app->current_size = CGSizeMake(message->as.resize.width, message->as.resize.height);
+            app->current_size = message->as.resize;
             HelloWorldUpdateLayout(app);
             break;
 

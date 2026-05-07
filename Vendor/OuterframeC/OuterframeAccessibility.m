@@ -54,10 +54,24 @@ static bool OFAXWriteU32(OFAXWriter *writer, uint32_t value) {
     return OFAXWriteBytes(writer, bytes, sizeof(bytes));
 }
 
-static bool OFAXWriteF32(OFAXWriter *writer, float value) {
-    uint32_t bits = 0;
+static bool OFAXWriteU64(OFAXWriter *writer, uint64_t value) {
+    uint8_t bytes[8] = {
+        (uint8_t)(value & 0xff),
+        (uint8_t)((value >> 8) & 0xff),
+        (uint8_t)((value >> 16) & 0xff),
+        (uint8_t)((value >> 24) & 0xff),
+        (uint8_t)((value >> 32) & 0xff),
+        (uint8_t)((value >> 40) & 0xff),
+        (uint8_t)((value >> 48) & 0xff),
+        (uint8_t)((value >> 56) & 0xff),
+    };
+    return OFAXWriteBytes(writer, bytes, sizeof(bytes));
+}
+
+static bool OFAXWriteF64(OFAXWriter *writer, double value) {
+    uint64_t bits = 0;
     memcpy(&bits, &value, sizeof(bits));
-    return OFAXWriteU32(writer, bits);
+    return OFAXWriteU64(writer, bits);
 }
 
 static bool OFAXWriteOptionalCString(OFAXWriter *writer, const char *string) {
@@ -87,10 +101,10 @@ static bool OFAXEncodeNode(OFAXWriter *writer, const OFAccessibilityNode *node) 
 
     bool ok = OFAXWriteU32(writer, node->identifier) &&
               OFAXWriteU8(writer, node->role) &&
-              OFAXWriteF32(writer, (float)node->frame.origin.x) &&
-              OFAXWriteF32(writer, (float)node->frame.origin.y) &&
-              OFAXWriteF32(writer, (float)node->frame.size.width) &&
-              OFAXWriteF32(writer, (float)node->frame.size.height) &&
+              OFAXWriteF64(writer, node->frame.origin.x) &&
+              OFAXWriteF64(writer, node->frame.origin.y) &&
+              OFAXWriteF64(writer, node->frame.size.width) &&
+              OFAXWriteF64(writer, node->frame.size.height) &&
               OFAXWriteOptionalCString(writer, node->label) &&
               OFAXWriteOptionalCString(writer, node->value) &&
               OFAXWriteOptionalCString(writer, node->hint) &&

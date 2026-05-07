@@ -133,8 +133,8 @@ static void OFHostHandleImageResponse(OFHost *host, const OFBrowserMessage *mess
 
         OFHostRemoveImageRequestAtIndex(host, i);
         if (entry.callback) {
-            OFDataView image = message->as.image_response.has_image_data ? message->as.image_response.image_data : (OFDataView){0};
-            entry.callback(host, image, message->as.image_response.width, message->as.image_response.height, entry.context);
+            OFDataView alpha_mask = message->as.image_response.has_alpha_mask_data ? message->as.image_response.alpha_mask_data : (OFDataView){0};
+            entry.callback(host, alpha_mask, message->as.image_response.width, message->as.image_response.height, message->as.image_response.bytes_per_row, entry.context);
         }
         return;
     }
@@ -275,7 +275,7 @@ void OFHostUpdateStartPageMetadata(OFHost *host, const char *title_or_null, cons
     }
 }
 
-void OFHostShowContextMenu(OFHost *host, OFDataView attributed_text_rtf, float location_x, float location_y) {
+void OFHostShowContextMenu(OFHost *host, OFDataView attributed_text_rtf, double location_x, double location_y) {
     if (!host) return;
     OFBuffer frame = {0};
     if (OFEncodeShowContextMenu(attributed_text_rtf, location_x, location_y, &frame)) {
@@ -283,7 +283,7 @@ void OFHostShowContextMenu(OFHost *host, OFDataView attributed_text_rtf, float l
     }
 }
 
-void OFHostShowDefinition(OFHost *host, OFDataView attributed_text_rtf, float location_x, float location_y) {
+void OFHostShowDefinition(OFHost *host, OFDataView attributed_text_rtf, double location_x, double location_y) {
     if (!host) return;
     OFBuffer frame = {0};
     if (OFEncodeShowDefinition(attributed_text_rtf, location_x, location_y, &frame)) {
@@ -343,9 +343,9 @@ void OFHostStopDisplayLinkCallback(OFHost *host, OFUUID callback_id) {
     }
 }
 
-OFUUID OFHostRequestSystemSymbolImage(OFHost *host, const char *symbol_name, float point_size, const char *weight, float scale, float tint_red, float tint_green, float tint_blue, float tint_alpha, OFHostImageCallback callback, void *context) {
+OFUUID OFHostRequestSystemSymbolImage(OFHost *host, const char *symbol_name, double point_size, double weight, double scale, OFHostImageCallback callback, void *context) {
     OFUUID request_id = {0};
-    if (!host || !symbol_name || !weight || !callback || !OFHostReserveImageRequests(host, 1)) return request_id;
+    if (!host || !symbol_name || !callback || !OFHostReserveImageRequests(host, 1)) return request_id;
 
     request_id = OFUUIDCreate();
     host->image_requests[host->image_request_count++] = (OFImageRequestEntry){
@@ -355,7 +355,7 @@ OFUUID OFHostRequestSystemSymbolImage(OFHost *host, const char *symbol_name, flo
     };
 
     OFBuffer frame = {0};
-    if (OFEncodeGetImageWithSystemSymbolName(request_id, symbol_name, point_size, weight, scale, tint_red, tint_green, tint_blue, tint_alpha, &frame)) {
+    if (OFEncodeGetImageWithSystemSymbolName(request_id, symbol_name, point_size, weight, scale, &frame)) {
         OFHostSendBuffer(host, &frame);
     }
     return request_id;
