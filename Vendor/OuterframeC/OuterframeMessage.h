@@ -52,6 +52,7 @@ enum {
     OFInitArgKindURL = 6,
     OFInitArgKindBundleURL = 7,
     OFInitArgKindWindowIsActive = 8,
+    OFInitArgKindHistoryEntryID = 9,
 };
 
 typedef uint16_t OFBrowserMessageKind;
@@ -86,6 +87,10 @@ enum {
     OFBrowserMessageCopySelectedPasteboardRequest = 1027,
     OFBrowserMessagePasteboardContentDelivered = 1028,
     OFBrowserMessageAccessibilitySnapshotRequest = 1029,
+    OFBrowserMessageHistoryEntryAccepted = 1030,
+    OFBrowserMessageHistoryEntryRejected = 1031,
+    OFBrowserMessageHistoryTraversal = 1032,
+    OFBrowserMessageHistoryContextUpdate = 1033,
 };
 
 typedef uint16_t OFContentMessageKind;
@@ -104,6 +109,9 @@ enum {
     OFContentMessageAccessibilitySnapshotResponse = 2011,
     OFContentMessageAccessibilityTreeChanged = 2012,
     OFContentMessageOpenNewWindow = 2013,
+    OFContentMessageHistoryPushEntry = 2014,
+    OFContentMessageHistoryReplaceEntry = 2015,
+    OFContentMessageHistoryGo = 2016,
     OFContentMessagePageMetadataUpdate = 2017,
     OFContentMessageStartPageMetadataUpdate = 2018,
 };
@@ -162,6 +170,8 @@ typedef struct {
     OFStringView bundle_url;
     bool has_window_is_active;
     bool window_is_active;
+    bool has_history_entry_id;
+    OFUUID history_entry_id;
 } OFInitializeContent;
 
 typedef struct {
@@ -205,6 +215,7 @@ typedef struct {
         struct { bool value; } boolean_update;
         struct { OFUUID request_id; } request;
         struct { OFPasteboardItemView *items; size_t count; } pasteboard;
+        struct { OFUUID entry_id; OFStringView url; OFStringView error_message; uint32_t length; bool can_go_back; bool can_go_forward; } history;
     } as;
 } OFBrowserMessage;
 
@@ -227,6 +238,8 @@ bool OFEncodeCopySelectedPasteboardResponse(OFUUID request_id, const OFPasteboar
 bool OFEncodePasteboardCapabilities(bool can_copy, bool can_cut, const OFStringView *pasteboard_types, size_t type_count, OFBuffer *out_frame);
 bool OFEncodeTextCursorUpdate(const OFTextCursorSnapshot *cursors, size_t cursor_count, OFBuffer *out_frame);
 bool OFEncodeOpenNewWindow(const char *url, const char *display_string_or_null, bool has_preferred_size, CGSize preferred_size, OFBuffer *out_frame);
+bool OFEncodeHistoryEntry(uint16_t message_type, OFUUID entry_id, const char *url_or_null, OFBuffer *out_frame);
+bool OFEncodeHistoryGo(int32_t delta, OFBuffer *out_frame);
 void OFBufferFree(OFBuffer *buffer);
 
 #ifdef __cplusplus

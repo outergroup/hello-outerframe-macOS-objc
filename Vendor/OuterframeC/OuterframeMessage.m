@@ -151,6 +151,10 @@ static bool OFWriteU32(OFByteWriter *writer, uint32_t value) {
     return OFWriteBytes(writer, bytes, sizeof(bytes));
 }
 
+static bool OFWriteI32(OFByteWriter *writer, int32_t value) {
+    return OFWriteU32(writer, (uint32_t)value);
+}
+
 static bool OFWriteU64(OFByteWriter *writer, uint64_t value) {
     uint8_t bytes[8] = {
         (uint8_t)(value & 0xff),
@@ -326,6 +330,10 @@ static bool OFDecodeInitialize(OFCursor *cursor, OFInitializeContent *initialize
                 initialize->has_window_is_active = true;
                 break;
             }
+            case OFInitArgKindHistoryEntryID:
+                if (!OFReadUUID(&arg, &initialize->history_entry_id)) return false;
+                initialize->has_history_entry_id = true;
+                break;
             default:
                 break;
         }
@@ -488,6 +496,23 @@ bool OFBrowserMessageDecode(const uint8_t *message, size_t message_length, OFBro
             return OFReadUUID(&cursor, &out_message->as.request.request_id);
         case OFBrowserMessagePasteboardContentDelivered:
             return OFDecodePasteboardItems(&cursor, &out_message->as.pasteboard.items, &out_message->as.pasteboard.count);
+        case OFBrowserMessageHistoryEntryAccepted:
+        case OFBrowserMessageHistoryTraversal:
+            return OFReadUUID(&cursor, &out_message->as.history.entry_id) &&
+                   OFReadStringReference(&cursor, &out_message->as.history.url);
+        case OFBrowserMessageHistoryEntryRejected:
+            return OFReadUUID(&cursor, &out_message->as.history.entry_id) &&
+                   OFReadStringReference(&cursor, &out_message->as.history.error_message);
+        case OFBrowserMessageHistoryContextUpdate: {
+            uint8_t flags = 0;
+            bool ok = OFReadUUID(&cursor, &out_message->as.history.entry_id) &&
+                      OFReadStringReference(&cursor, &out_message->as.history.url) &&
+                      OFReadU32(&cursor, &out_message->as.history.length) &&
+                      OFReadU8(&cursor, &flags);
+            out_message->as.history.can_go_back = (flags & (1 << 0)) != 0;
+            out_message->as.history.can_go_forward = (flags & (1 << 1)) != 0;
+            return ok;
+        }
         default:
             return false;
     }
@@ -727,6 +752,25 @@ bool OFEncodeOpenNewWindow(const char *url, const char *display_string_or_null, 
         return false;
     }
     return OFFinishOffsetPayload(OFContentMessageOpenNewWindow, &payload, out_frame);
+}
+
+bool OFEncodeHistoryEntry(uint16_t message_type, OFUUID entry_id, const char *url_or_null, OFBuffer *out_frame) {
+    if (message_type != OFContentMessageHistoryPushEntry && message_type != OFContentMessageHistoryReplaceEntry) return false;
+    OFOffsetPayloadBuilder payload = {0};
+    bool ok = OFPayloadWriteUUID(&payload, entry_id) &&
+              OFPayloadWriteU8(&payload, url_or_null ? 1 << 0 : 0) &&
+              OFPayloadWriteCStringReference(&payload, url_or_null ? url_or_null : "");
+    if (!ok) {
+        OFPayloadFree(&payload);
+        return false;
+    }
+    return OFFinishOffsetPayload(message_type, &payload, out_frame);
+}
+
+bool OFEncodeHistoryGo(int32_t delta, OFBuffer *out_frame) {
+    OFByteWriter payload = {0};
+    if (!OFWriteI32(&payload, delta)) return false;
+    return OFFinishPayload(OFContentMessageHistoryGo, &payload, out_frame);
 }
 
 void OFBufferFree(OFBuffer *buffer) {

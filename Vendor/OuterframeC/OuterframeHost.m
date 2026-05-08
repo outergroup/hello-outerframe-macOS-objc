@@ -25,6 +25,10 @@ struct OFHost {
     void *context;
     char *url;
     char *bundle_url;
+    OFUUID current_history_entry_id;
+    uint32_t history_length;
+    bool can_go_back;
+    bool can_go_forward;
     OFDisplayLinkEntry *display_links;
     size_t display_link_count;
     size_t display_link_capacity;
@@ -109,6 +113,12 @@ static void OFHostSendBuffer(OFHost *host, OFBuffer *buffer) {
     OFBufferFree(buffer);
 }
 
+static void OFHostSetURLFromStringView(OFHost *host, OFStringView url) {
+    if (!host) return;
+    free(host->url);
+    host->url = OFStringViewCopyCString(url);
+}
+
 static void OFHostHandleDisplayLinkRegistered(OFHost *host, OFUUID callback_id, OFUUID browser_callback_id) {
     OFDisplayLinkEntry *entry = OFHostFindDisplayLink(host, callback_id);
     if (!entry) return;
@@ -178,6 +188,24 @@ static void OFHostSocketMessage(OFContentSocket *socket, const uint8_t *message_
         case OFBrowserMessageAccessibilitySnapshotRequest:
             OFHostHandleAccessibilitySnapshotRequest(host, message.as.request.request_id);
             break;
+        case OFBrowserMessageHistoryEntryAccepted:
+        case OFBrowserMessageHistoryTraversal:
+            host->current_history_entry_id = message.as.history.entry_id;
+            OFHostSetURLFromStringView(host, message.as.history.url);
+            if (host->callbacks.message) {
+                host->callbacks.message(host, &message, host->context);
+            }
+            break;
+        case OFBrowserMessageHistoryContextUpdate:
+            host->current_history_entry_id = message.as.history.entry_id;
+            OFHostSetURLFromStringView(host, message.as.history.url);
+            host->history_length = message.as.history.length;
+            host->can_go_back = message.as.history.can_go_back;
+            host->can_go_forward = message.as.history.can_go_forward;
+            if (host->callbacks.message) {
+                host->callbacks.message(host, &message, host->context);
+            }
+            break;
         default:
             if (host->callbacks.message) {
                 host->callbacks.message(host, &message, host->context);
@@ -233,6 +261,7 @@ void OFHostConfigureFromInitialize(OFHost *host, const OFInitializeContent *init
     free(host->bundle_url);
     host->url = initialize->has_url ? OFStringViewCopyCString(initialize->url) : NULL;
     host->bundle_url = initialize->has_bundle_url ? OFStringViewCopyCString(initialize->bundle_url) : NULL;
+    host->current_history_entry_id = initialize->has_history_entry_id ? initialize->history_entry_id : (OFUUID){0};
 }
 
 const char *OFHostURL(OFHost *host) {
@@ -241,6 +270,22 @@ const char *OFHostURL(OFHost *host) {
 
 const char *OFHostBundleURL(OFHost *host) {
     return host ? host->bundle_url : NULL;
+}
+
+OFUUID OFHostCurrentHistoryEntryID(OFHost *host) {
+    return host ? host->current_history_entry_id : (OFUUID){0};
+}
+
+uint32_t OFHostHistoryLength(OFHost *host) {
+    return host ? host->history_length : 0;
+}
+
+bool OFHostCanGoBackInHistory(OFHost *host) {
+    return host ? host->can_go_back : false;
+}
+
+bool OFHostCanGoForwardInHistory(OFHost *host) {
+    return host ? host->can_go_forward : false;
 }
 
 void OFHostSetCursor(OFHost *host, OFCursorType cursor_type) {
@@ -291,6 +336,33 @@ void OFHostShowDefinition(OFHost *host, OFDataView attributed_text_rtf, double l
     }
 }
 
+void OFHostSetPasteboardCapabilities(OFHost *host, bool can_copy, bool can_cut, const char *const *pasteboard_types, size_t type_count) {
+    if (!host) return;
+    OFStringView *views = NULL;
+    if (type_count > 0) {
+        views = calloc(type_count, sizeof(*views));
+        if (!views) return;
+        for (size_t i = 0; i < type_count; i++) {
+            const char *type = pasteboard_types[i] ?: "";
+            views[i] = (OFStringView){ .bytes = type, .length = strlen(type) };
+        }
+    }
+
+    OFBuffer frame = {0};
+    if (OFEncodePasteboardCapabilities(can_copy, can_cut, views, type_count, &frame)) {
+        OFHostSendBuffer(host, &frame);
+    }
+    free(views);
+}
+
+void OFHostSendCopySelectedPasteboardResponse(OFHost *host, OFUUID request_id, const OFPasteboardItemView *items, size_t item_count) {
+    if (!host) return;
+    OFBuffer frame = {0};
+    if (OFEncodeCopySelectedPasteboardResponse(request_id, items, item_count, &frame)) {
+        OFHostSendBuffer(host, &frame);
+    }
+}
+
 void OFHostSendAccessibilityTreeChanged(OFHost *host, OFAccessibilityNotification notification_mask) {
     if (!host) return;
     OFBuffer frame = {0};
@@ -305,6 +377,44 @@ void OFHostPerformHapticFeedback(OFHost *host, OFHapticFeedbackStyle style) {
     if (OFEncodeHapticFeedback(style, &frame)) {
         OFHostSendBuffer(host, &frame);
     }
+}
+
+OFUUID OFHostPushHistoryEntry(OFHost *host, const char *url_or_null) {
+    OFUUID entry_id = {0};
+    if (!host) return entry_id;
+    entry_id = OFUUIDCreate();
+    OFBuffer frame = {0};
+    if (OFEncodeHistoryEntry(OFContentMessageHistoryPushEntry, entry_id, url_or_null, &frame)) {
+        OFHostSendBuffer(host, &frame);
+    }
+    return entry_id;
+}
+
+OFUUID OFHostReplaceHistoryEntry(OFHost *host, const char *url_or_null) {
+    OFUUID entry_id = {0};
+    if (!host) return entry_id;
+    entry_id = OFUUIDCreate();
+    OFBuffer frame = {0};
+    if (OFEncodeHistoryEntry(OFContentMessageHistoryReplaceEntry, entry_id, url_or_null, &frame)) {
+        OFHostSendBuffer(host, &frame);
+    }
+    return entry_id;
+}
+
+void OFHostGoInHistory(OFHost *host, int32_t delta) {
+    if (!host) return;
+    OFBuffer frame = {0};
+    if (OFEncodeHistoryGo(delta, &frame)) {
+        OFHostSendBuffer(host, &frame);
+    }
+}
+
+void OFHostGoBackInHistory(OFHost *host) {
+    OFHostGoInHistory(host, -1);
+}
+
+void OFHostGoForwardInHistory(OFHost *host) {
+    OFHostGoInHistory(host, 1);
 }
 
 OFUUID OFHostRegisterDisplayLinkCallback(OFHost *host, OFHostDisplayLinkCallback callback, void *context) {
