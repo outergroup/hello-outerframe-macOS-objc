@@ -83,14 +83,13 @@ enum {
     OFBrowserMessageTextInputFocus = 1023,
     OFBrowserMessageTextCommand = 1024,
     OFBrowserMessageSetCursorPosition = 1025,
-    OFBrowserMessageImageWithSystemSymbolName = 1026,
-    OFBrowserMessageCopySelectedPasteboardRequest = 1027,
-    OFBrowserMessagePasteboardContentDelivered = 1028,
-    OFBrowserMessageAccessibilitySnapshotRequest = 1029,
-    OFBrowserMessageHistoryEntryAccepted = 1030,
-    OFBrowserMessageHistoryEntryRejected = 1031,
-    OFBrowserMessageHistoryTraversal = 1032,
-    OFBrowserMessageHistoryContextUpdate = 1033,
+    OFBrowserMessageCopySelectedPasteboardRequest = 1026,
+    OFBrowserMessagePasteboardContentDelivered = 1027,
+    OFBrowserMessageAccessibilitySnapshotRequest = 1028,
+    OFBrowserMessageHistoryEntryAccepted = 1029,
+    OFBrowserMessageHistoryEntryRejected = 1030,
+    OFBrowserMessageHistoryTraversal = 1031,
+    OFBrowserMessageHistoryContextUpdate = 1032,
 };
 
 typedef uint16_t OFContentMessageKind;
@@ -102,17 +101,16 @@ enum {
     OFContentMessageTextCursorUpdate = 2004,
     OFContentMessageShowContextMenu = 2005,
     OFContentMessageShowDefinition = 2006,
-    OFContentMessageGetImageWithSystemSymbolName = 2007,
-    OFContentMessageHapticFeedback = 2008,
-    OFContentMessageCopySelectedPasteboardResponse = 2009,
-    OFContentMessageEditingCapabilitiesUpdate = 2010,
-    OFContentMessageAccessibilitySnapshotResponse = 2011,
-    OFContentMessageAccessibilityTreeChanged = 2012,
-    OFContentMessageOpenNewWindow = 2013,
-    OFContentMessageHistoryPushEntry = 2014,
-    OFContentMessageHistoryReplaceEntry = 2015,
-    OFContentMessageHistoryGo = 2016,
-    OFContentMessagePageMetadataUpdate = 2017,
+    OFContentMessageHapticFeedback = 2007,
+    OFContentMessageCopySelectedPasteboardResponse = 2008,
+    OFContentMessageEditingCapabilitiesUpdate = 2009,
+    OFContentMessageAccessibilitySnapshotResponse = 2010,
+    OFContentMessageAccessibilityTreeChanged = 2011,
+    OFContentMessageOpenNewWindow = 2012,
+    OFContentMessageHistoryPushEntry = 2013,
+    OFContentMessageHistoryReplaceEntry = 2014,
+    OFContentMessageHistoryGo = 2015,
+    OFContentMessagePageMetadataUpdate = 2016,
     OFContentMessageStartPageMetadataUpdate = 2018,
 };
 
@@ -205,7 +203,6 @@ typedef struct {
         OFKeyEvent key;
         struct { uint32_t surface_id; double magnification; double x; double y; double scroll_x; double scroll_y; } magnification;
         struct { double x; double y; } point;
-        struct { OFUUID request_id; OFDataView alpha_mask_data; bool has_alpha_mask_data; uint32_t width; uint32_t height; uint32_t bytes_per_row; bool success; OFStringView error_message; bool has_error_message; } image_response;
         struct { OFStringView text; bool has_replacement_range; uint64_t replacement_location; uint64_t replacement_length; } text_input;
         struct { OFStringView text; uint64_t selected_location; uint64_t selected_length; bool has_replacement_range; uint64_t replacement_location; uint64_t replacement_length; } marked_text;
         struct { OFUUID field_id; bool has_focus; } text_focus;
@@ -226,9 +223,7 @@ bool OFEncodeFrame(uint16_t type, OFDataView payload, OFBuffer *out_frame);
 bool OFEncodeCursorUpdate(OFCursorType cursor_type, OFBuffer *out_frame);
 bool OFEncodeInputModeUpdate(OFContentInputMode input_mode, OFBuffer *out_frame);
 bool OFEncodeShowContextMenu(OFDataView attributed_text_rtf, double location_x, double location_y, OFBuffer *out_frame);
-bool OFEncodeShowDefinition(OFDataView attributed_text_rtf, double location_x, double location_y, OFBuffer *out_frame);
-bool OFEncodeGetImageWithSystemSymbolName(OFUUID request_id, const char *symbol_name, double point_size, double weight, double scale, OFBuffer *out_frame);
-bool OFEncodePageMetadata(bool start_page, const char *title_or_null, const uint8_t *icon_png_or_null, size_t icon_png_length, uint32_t icon_width, uint32_t icon_height, OFBuffer *out_frame);
+bool OFEncodeShowDefinition(OFDataView attributed_text_rtf, double location_x, double location_y, OFBuffer *out_frame);bool OFEncodePageMetadata(bool start_page, const char *title_or_null, const uint8_t *icon_png_or_null, size_t icon_png_length, uint32_t icon_width, uint32_t icon_height, OFBuffer *out_frame);
 bool OFEncodeAccessibilitySnapshotResponse(OFUUID request_id, const uint8_t *snapshot_or_null, size_t snapshot_length, OFBuffer *out_frame);
 bool OFEncodeAccessibilityTreeChanged(uint8_t notification_mask, OFBuffer *out_frame);
 bool OFEncodeHapticFeedback(OFHapticFeedbackStyle style, OFBuffer *out_frame);

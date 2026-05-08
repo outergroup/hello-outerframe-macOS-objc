@@ -13,8 +13,6 @@ typedef struct OFHost OFHost;
 typedef void (*OFHostMessageCallback)(OFHost *host, const OFBrowserMessage *message, void *context);
 typedef void (*OFHostDisconnectCallback)(OFHost *host, void *context);
 typedef void (*OFHostDisplayLinkCallback)(OFHost *host, double target_timestamp, void *context);
-typedef void (*OFHostImageCallback)(OFHost *host, OFDataView alpha_mask_data, uint32_t width, uint32_t height, uint32_t bytes_per_row, void *context);
-
 typedef struct {
     OFHostMessageCallback message;
     OFHostDisconnectCallback disconnected;
@@ -51,8 +49,6 @@ void OFHostGoBackInHistory(OFHost *host);
 void OFHostGoForwardInHistory(OFHost *host);
 OFUUID OFHostRegisterDisplayLinkCallback(OFHost *host, OFHostDisplayLinkCallback callback, void *context);
 void OFHostStopDisplayLinkCallback(OFHost *host, OFUUID callback_id);
-OFUUID OFHostRequestSystemSymbolImage(OFHost *host, const char *symbol_name, double point_size, double weight, double scale, OFHostImageCallback callback, void *context);
-
 #ifdef __cplusplus
 }
 #endif

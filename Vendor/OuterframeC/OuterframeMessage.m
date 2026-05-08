@@ -429,20 +429,6 @@ bool OFBrowserMessageDecode(const uint8_t *message, size_t message_length, OFBro
         case OFBrowserMessageQuickLook:
             return OFReadF64(&cursor, &out_message->as.point.x) &&
                    OFReadF64(&cursor, &out_message->as.point.y);
-        case OFBrowserMessageImageWithSystemSymbolName: {
-            uint8_t flags = 0;
-            if (!OFReadUUID(&cursor, &out_message->as.image_response.request_id) ||
-                !OFReadU32(&cursor, &out_message->as.image_response.width) ||
-                !OFReadU32(&cursor, &out_message->as.image_response.height) ||
-                !OFReadU32(&cursor, &out_message->as.image_response.bytes_per_row) ||
-                !OFReadU8(&cursor, &flags) ||
-                !OFReadDataReference(&cursor, &out_message->as.image_response.alpha_mask_data) ||
-                !OFReadStringReference(&cursor, &out_message->as.image_response.error_message)) return false;
-            out_message->as.image_response.success = (flags & (1 << 0)) != 0;
-            out_message->as.image_response.has_alpha_mask_data = (flags & (1 << 1)) != 0;
-            out_message->as.image_response.has_error_message = (flags & (1 << 2)) != 0;
-            return true;
-        }
         case OFBrowserMessageTextInput: {
             uint8_t flags = 0;
             bool ok = OFReadStringReference(&cursor, &out_message->as.text_input.text) &&
@@ -612,20 +598,6 @@ bool OFEncodeShowContextMenu(OFDataView attributed_text_rtf, double location_x, 
 
 bool OFEncodeShowDefinition(OFDataView attributed_text_rtf, double location_x, double location_y, OFBuffer *out_frame) {
     return OFEncodeAttributedTextAction(OFContentMessageShowDefinition, attributed_text_rtf, location_x, location_y, out_frame);
-}
-
-bool OFEncodeGetImageWithSystemSymbolName(OFUUID request_id, const char *symbol_name, double point_size, double weight, double scale, OFBuffer *out_frame) {
-    OFOffsetPayloadBuilder payload = {0};
-    bool ok = OFPayloadWriteUUID(&payload, request_id) &&
-              OFPayloadWriteCStringReference(&payload, symbol_name) &&
-              OFPayloadWriteF64(&payload, point_size) &&
-              OFPayloadWriteF64(&payload, weight) &&
-              OFPayloadWriteF64(&payload, scale);
-    if (!ok) {
-        OFPayloadFree(&payload);
-        return false;
-    }
-    return OFFinishOffsetPayload(OFContentMessageGetImageWithSystemSymbolName, &payload, out_frame);
 }
 
 bool OFEncodePageMetadata(bool start_page, const char *title_or_null, const uint8_t *icon_png_or_null, size_t icon_png_length, uint32_t icon_width, uint32_t icon_height, OFBuffer *out_frame) {

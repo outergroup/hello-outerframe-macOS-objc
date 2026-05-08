@@ -13,12 +13,6 @@ typedef struct {
     void *context;
 } OFDisplayLinkEntry;
 
-typedef struct {
-    OFUUID request_id;
-    OFHostImageCallback callback;
-    void *context;
-} OFImageRequestEntry;
-
 struct OFHost {
     OFContentSocket *socket;
     OFHostMessageCallback message_callback;
@@ -34,9 +28,6 @@ struct OFHost {
     OFDisplayLinkEntry *display_links;
     size_t display_link_count;
     size_t display_link_capacity;
-    OFImageRequestEntry *image_requests;
-    size_t image_request_count;
-    size_t image_request_capacity;
 };
 
 static bool OFUUIDEqual(OFUUID a, OFUUID b) {
@@ -71,19 +62,6 @@ static bool OFHostReserveDisplayLinks(OFHost *host, size_t additional) {
     return true;
 }
 
-static bool OFHostReserveImageRequests(OFHost *host, size_t additional) {
-    if (additional > SIZE_MAX - host->image_request_count) return false;
-    size_t needed = host->image_request_count + additional;
-    if (needed <= host->image_request_capacity) return true;
-    size_t capacity = host->image_request_capacity ? host->image_request_capacity * 2 : 4;
-    if (capacity < needed) capacity = needed;
-    OFImageRequestEntry *entries = realloc(host->image_requests, capacity * sizeof(*entries));
-    if (!entries) return false;
-    host->image_requests = entries;
-    host->image_request_capacity = capacity;
-    return true;
-}
-
 static OFDisplayLinkEntry *OFHostFindDisplayLink(OFHost *host, OFUUID callback_id) {
     for (size_t i = 0; i < host->display_link_count; i++) {
         if (OFUUIDEqual(host->display_links[i].callback_id, callback_id)) {
@@ -99,14 +77,6 @@ static void OFHostRemoveDisplayLinkAtIndex(OFHost *host, size_t index) {
         memmove(&host->display_links[index], &host->display_links[index + 1], (host->display_link_count - index - 1) * sizeof(host->display_links[0]));
     }
     host->display_link_count--;
-}
-
-static void OFHostRemoveImageRequestAtIndex(OFHost *host, size_t index) {
-    if (index >= host->image_request_count) return;
-    if (index + 1 < host->image_request_count) {
-        memmove(&host->image_requests[index], &host->image_requests[index + 1], (host->image_request_count - index - 1) * sizeof(host->image_requests[0]));
-    }
-    host->image_request_count--;
 }
 
 static void OFHostSendBuffer(OFHost *host, OFBuffer *buffer) {
@@ -137,21 +107,6 @@ static void OFHostHandleDisplayLinkFired(OFHost *host, double target_timestamp) 
     }
 }
 
-static void OFHostHandleImageResponse(OFHost *host, const OFBrowserMessage *message) {
-    OFUUID request_id = message->as.image_response.request_id;
-    for (size_t i = 0; i < host->image_request_count; i++) {
-        OFImageRequestEntry entry = host->image_requests[i];
-        if (!OFUUIDEqual(entry.request_id, request_id)) continue;
-
-        OFHostRemoveImageRequestAtIndex(host, i);
-        if (entry.callback) {
-            OFDataView alpha_mask = message->as.image_response.has_alpha_mask_data ? message->as.image_response.alpha_mask_data : (OFDataView){0};
-            entry.callback(host, alpha_mask, message->as.image_response.width, message->as.image_response.height, message->as.image_response.bytes_per_row, entry.context);
-        }
-        return;
-    }
-}
-
 static void OFHostSocketMessage(OFContentSocket *socket, const uint8_t *message_data, size_t message_length, void *context) {
     (void)socket;
     OFHost *host = context;
@@ -166,9 +121,6 @@ static void OFHostSocketMessage(OFContentSocket *socket, const uint8_t *message_
             break;
         case OFBrowserMessageDisplayLinkCallbackRegistered:
             OFHostHandleDisplayLinkRegistered(host, message.as.display_link_callback_registered.callback_id, message.as.display_link_callback_registered.browser_callback_id);
-            break;
-        case OFBrowserMessageImageWithSystemSymbolName:
-            OFHostHandleImageResponse(host, &message);
             break;
         case OFBrowserMessageHistoryEntryAccepted:
         case OFBrowserMessageHistoryTraversal:
@@ -235,7 +187,6 @@ void OFHostDestroy(OFHost *host) {
     free(host->url);
     free(host->bundle_url);
     free(host->display_links);
-    free(host->image_requests);
     free(host);
 }
 
@@ -449,22 +400,4 @@ void OFHostStopDisplayLinkCallback(OFHost *host, OFUUID callback_id) {
         OFHostRemoveDisplayLinkAtIndex(host, i);
         return;
     }
-}
-
-OFUUID OFHostRequestSystemSymbolImage(OFHost *host, const char *symbol_name, double point_size, double weight, double scale, OFHostImageCallback callback, void *context) {
-    OFUUID request_id = {0};
-    if (!host || !symbol_name || !callback || !OFHostReserveImageRequests(host, 1)) return request_id;
-
-    request_id = OFUUIDCreate();
-    host->image_requests[host->image_request_count++] = (OFImageRequestEntry){
-        .request_id = request_id,
-        .callback = callback,
-        .context = context,
-    };
-
-    OFBuffer frame = {0};
-    if (OFEncodeGetImageWithSystemSymbolName(request_id, symbol_name, point_size, weight, scale, &frame)) {
-        OFHostSendBuffer(host, &frame);
-    }
-    return request_id;
 }
