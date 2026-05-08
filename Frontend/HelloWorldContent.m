@@ -71,9 +71,7 @@ static void HelloWorldUpdateColors(HelloWorldApp *app) {
     }];
 }
 
-static bool HelloWorldWriteAccessibilitySnapshot(OFHost *host, OFBuffer *out_snapshot_data, void *context) {
-    (void)host;
-    HelloWorldApp *app = context;
+static bool HelloWorldWriteAccessibilitySnapshot(HelloWorldApp *app, OFBuffer *out_snapshot_data) {
     NSString *title = [app->title_layer.string isKindOfClass:NSString.class] ? (NSString *)app->title_layer.string : @"Hello, world!";
     NSString *subtitle = [app->subtitle_layer.string isKindOfClass:NSString.class] ? (NSString *)app->subtitle_layer.string : @"";
 
@@ -183,6 +181,16 @@ static void HelloWorldHandleMessage(OFHost *host, const OFBrowserMessage *messag
             break;
         }
 
+        case OFBrowserMessageAccessibilitySnapshotRequest: {
+            OFBuffer snapshot_data = {0};
+            if (!HelloWorldWriteAccessibilitySnapshot(app, &snapshot_data)) {
+                OFAccessibilityNotImplementedSnapshot("Accessibility not implemented", &snapshot_data);
+            }
+            OFHostSendAccessibilitySnapshotResponse(host, message->as.request.request_id, snapshot_data.bytes, snapshot_data.length);
+            OFBufferFree(&snapshot_data);
+            break;
+        }
+
         case OFBrowserMessageShutdown:
             HelloWorldScheduleDestroy(app);
             break;
@@ -212,7 +220,6 @@ static HelloWorldApp *HelloWorldAppCreate(int32_t socket_fd, id<OuterframeAppCon
     OFHostCallbacks callbacks = {
         .message = HelloWorldHandleMessage,
         .disconnected = HelloWorldHandleDisconnect,
-        .accessibility_snapshot = HelloWorldWriteAccessibilitySnapshot,
     };
     app->host = OFHostCreate(socket_fd, callbacks, app);
     if (!app->host) {

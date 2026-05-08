@@ -21,8 +21,10 @@ typedef struct {
 
 struct OFHost {
     OFContentSocket *socket;
-    OFHostCallbacks callbacks;
-    void *context;
+    OFHostMessageCallback message_callback;
+    void *message_context;
+    OFHostDisconnectCallback disconnected_callback;
+    void *disconnected_context;
     char *url;
     char *bundle_url;
     OFUUID current_history_entry_id;
@@ -150,23 +152,6 @@ static void OFHostHandleImageResponse(OFHost *host, const OFBrowserMessage *mess
     }
 }
 
-static void OFHostHandleAccessibilitySnapshotRequest(OFHost *host, OFUUID request_id) {
-    OFBuffer snapshot = {0};
-    bool has_snapshot = false;
-    if (host->callbacks.accessibility_snapshot) {
-        has_snapshot = host->callbacks.accessibility_snapshot(host, &snapshot, host->context);
-    }
-    if (!has_snapshot) {
-        has_snapshot = OFAccessibilityNotImplementedSnapshot("Accessibility not implemented", &snapshot);
-    }
-
-    OFBuffer frame = {0};
-    if (OFEncodeAccessibilitySnapshotResponse(request_id, snapshot.bytes, snapshot.length, &frame)) {
-        OFHostSendBuffer(host, &frame);
-    }
-    OFBufferFree(&snapshot);
-}
-
 static void OFHostSocketMessage(OFContentSocket *socket, const uint8_t *message_data, size_t message_length, void *context) {
     (void)socket;
     OFHost *host = context;
@@ -185,15 +170,12 @@ static void OFHostSocketMessage(OFContentSocket *socket, const uint8_t *message_
         case OFBrowserMessageImageWithSystemSymbolName:
             OFHostHandleImageResponse(host, &message);
             break;
-        case OFBrowserMessageAccessibilitySnapshotRequest:
-            OFHostHandleAccessibilitySnapshotRequest(host, message.as.request.request_id);
-            break;
         case OFBrowserMessageHistoryEntryAccepted:
         case OFBrowserMessageHistoryTraversal:
             host->current_history_entry_id = message.as.history.entry_id;
             OFHostSetURLFromStringView(host, message.as.history.url);
-            if (host->callbacks.message) {
-                host->callbacks.message(host, &message, host->context);
+            if (host->message_callback) {
+                host->message_callback(host, &message, host->message_context);
             }
             break;
         case OFBrowserMessageHistoryContextUpdate:
@@ -202,13 +184,13 @@ static void OFHostSocketMessage(OFContentSocket *socket, const uint8_t *message_
             host->history_length = message.as.history.length;
             host->can_go_back = message.as.history.can_go_back;
             host->can_go_forward = message.as.history.can_go_forward;
-            if (host->callbacks.message) {
-                host->callbacks.message(host, &message, host->context);
+            if (host->message_callback) {
+                host->message_callback(host, &message, host->message_context);
             }
             break;
         default:
-            if (host->callbacks.message) {
-                host->callbacks.message(host, &message, host->context);
+            if (host->message_callback) {
+                host->message_callback(host, &message, host->message_context);
             }
             break;
     }
@@ -219,8 +201,8 @@ static void OFHostSocketMessage(OFContentSocket *socket, const uint8_t *message_
 static void OFHostSocketClosed(OFContentSocket *socket, void *context) {
     (void)socket;
     OFHost *host = context;
-    if (host->callbacks.disconnected) {
-        host->callbacks.disconnected(host, host->context);
+    if (host->disconnected_callback) {
+        host->disconnected_callback(host, host->disconnected_context);
     }
 }
 
@@ -228,8 +210,10 @@ OFHost *OFHostCreate(int32_t socket_fd, OFHostCallbacks callbacks, void *context
     OFHost *host = calloc(1, sizeof(*host));
     if (!host) return NULL;
 
-    host->callbacks = callbacks;
-    host->context = context;
+    host->message_callback = callbacks.message;
+    host->message_context = context;
+    host->disconnected_callback = callbacks.disconnected;
+    host->disconnected_context = context;
     OFContentSocketCallbacks socket_callbacks = {
         .message = OFHostSocketMessage,
         .closed = OFHostSocketClosed,
@@ -253,6 +237,12 @@ void OFHostDestroy(OFHost *host) {
     free(host->display_links);
     free(host->image_requests);
     free(host);
+}
+
+void OFHostSetMessageCallback(OFHost *host, OFHostMessageCallback callback, void *context) {
+    if (!host) return;
+    host->message_callback = callback;
+    host->message_context = context;
 }
 
 void OFHostConfigureFromInitialize(OFHost *host, const OFInitializeContent *initialize) {
@@ -359,6 +349,14 @@ void OFHostSendCopySelectedPasteboardResponse(OFHost *host, OFUUID request_id, c
     if (!host) return;
     OFBuffer frame = {0};
     if (OFEncodeCopySelectedPasteboardResponse(request_id, items, item_count, &frame)) {
+        OFHostSendBuffer(host, &frame);
+    }
+}
+
+void OFHostSendAccessibilitySnapshotResponse(OFHost *host, OFUUID request_id, const uint8_t *snapshot_or_null, size_t snapshot_length) {
+    if (!host) return;
+    OFBuffer frame = {0};
+    if (OFEncodeAccessibilitySnapshotResponse(request_id, snapshot_or_null, snapshot_length, &frame)) {
         OFHostSendBuffer(host, &frame);
     }
 }
