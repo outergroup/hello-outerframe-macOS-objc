@@ -207,6 +207,39 @@ static void OFSocketDrainPendingWrites(OFContentSocket *socket) {
     OFSocketSuspendWriteSourceIfNeeded(socket);
 }
 
+static void OFSocketWriteImmediatelyOrEnqueue(OFContentSocket *socket, const uint8_t *bytes, size_t length) {
+    if (socket->stopped || socket->fd < 0 || !bytes || length == 0) return;
+
+    if (socket->pending_write.length > 0) {
+        if (OFSocketBufferAppend(&socket->pending_write, bytes, length)) {
+            OFSocketResumeWriteSourceIfNeeded(socket);
+        }
+        return;
+    }
+
+    ssize_t written = write(socket->fd, bytes, length);
+    if (written == (ssize_t)length) {
+        return;
+    }
+
+    if (written > 0) {
+        size_t written_length = (size_t)written;
+        if (OFSocketBufferAppend(&socket->pending_write, bytes + written_length, length - written_length)) {
+            OFSocketResumeWriteSourceIfNeeded(socket);
+        }
+        return;
+    }
+
+    if (written == -1 && (errno == EWOULDBLOCK || errno == EAGAIN)) {
+        if (OFSocketBufferAppend(&socket->pending_write, bytes, length)) {
+            OFSocketResumeWriteSourceIfNeeded(socket);
+        }
+        return;
+    }
+
+    OFSocketStopOnQueue(socket, true);
+}
+
 OFContentSocket *OFContentSocketCreate(int32_t fd, OFContentSocketCallbacks callbacks, void *context) {
     OFContentSocket *socket = calloc(1, sizeof(*socket));
     if (!socket) return NULL;
@@ -274,4 +307,19 @@ void OFContentSocketSend(OFContentSocket *socket, const uint8_t *bytes, size_t l
         }
         free(copy);
     });
+}
+
+void OFContentSocketSendBlocking(OFContentSocket *socket, const uint8_t *bytes, size_t length) {
+    if (!socket || !bytes || length == 0) return;
+
+    uint8_t *copy = malloc(length);
+    if (!copy) return;
+    memcpy(copy, bytes, length);
+
+    dispatch_sync(socket->queue, ^{
+        OFSocketWriteImmediatelyOrEnqueue(socket, copy, length);
+        OFSocketDrainPendingWrites(socket);
+    });
+
+    free(copy);
 }

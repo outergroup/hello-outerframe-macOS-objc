@@ -308,7 +308,8 @@ void OFHostSendAccessibilitySnapshotResponse(OFHost *host, OFUUID request_id, co
     if (!host) return;
     OFBuffer frame = {0};
     if (OFEncodeAccessibilitySnapshotResponse(request_id, snapshot_or_null, snapshot_length, &frame)) {
-        OFHostSendBuffer(host, &frame);
+        OFContentSocketSendBlocking(host->socket, frame.bytes, frame.length);
+        OFBufferFree(&frame);
     }
 }
 

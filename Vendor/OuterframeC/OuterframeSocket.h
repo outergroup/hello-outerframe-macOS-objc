@@ -18,6 +18,7 @@ typedef struct {
 OFContentSocket *OFContentSocketCreate(int32_t fd, OFContentSocketCallbacks callbacks, void *context);
 void OFContentSocketDestroy(OFContentSocket *socket);
 void OFContentSocketSend(OFContentSocket *socket, const uint8_t *bytes, size_t length);
+void OFContentSocketSendBlocking(OFContentSocket *socket, const uint8_t *bytes, size_t length);
 
 #ifdef __cplusplus
 }
