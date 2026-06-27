@@ -207,10 +207,6 @@ static bool OFPayloadWriteU16(OFOffsetPayloadBuilder *payload, uint16_t value) {
     return OFWriteU16(&payload->fixed, value);
 }
 
-static bool OFPayloadWriteU32(OFOffsetPayloadBuilder *payload, uint32_t value) {
-    return OFWriteU32(&payload->fixed, value);
-}
-
 static bool OFPayloadWriteF64(OFOffsetPayloadBuilder *payload, double value) {
     return OFWriteF64(&payload->fixed, value);
 }
@@ -477,11 +473,15 @@ bool OFBrowserMessageDecode(const uint8_t *message, size_t message_length, OFBro
             out_message->as.boolean_update.value = (flags & (1 << 0)) != 0;
             return ok;
         }
-        case OFBrowserMessageCopySelectedPasteboardRequest:
+        case OFBrowserMessageSelectionToPasteboardCopyRequest:
+        case OFBrowserMessageSelectionToPasteboardCutRequest:
         case OFBrowserMessageAccessibilitySnapshotRequest:
             return OFReadUUID(&cursor, &out_message->as.request.request_id);
-        case OFBrowserMessagePasteboardContentDelivered:
+        case OFBrowserMessagePasteboardContentPasted:
             return OFDecodePasteboardItems(&cursor, &out_message->as.pasteboard.items, &out_message->as.pasteboard.count);
+        case OFBrowserMessageEditCommandValidationRequest:
+            return OFReadUUID(&cursor, &out_message->as.edit_validation.request_id) &&
+                   OFReadU32(&cursor, &out_message->as.edit_validation.commands);
         case OFBrowserMessageHistoryEntryAccepted:
         case OFBrowserMessageHistoryTraversal:
             return OFReadUUID(&cursor, &out_message->as.history.entry_id) &&
@@ -506,7 +506,7 @@ bool OFBrowserMessageDecode(const uint8_t *message, size_t message_length, OFBro
 
 void OFBrowserMessageFree(OFBrowserMessage *message) {
     if (!message) return;
-    if (message->kind == OFBrowserMessagePasteboardContentDelivered) {
+    if (message->kind == OFBrowserMessagePasteboardContentPasted) {
         free(message->as.pasteboard.items);
     }
     memset(message, 0, sizeof(*message));
@@ -600,23 +600,27 @@ bool OFEncodeShowDefinition(OFDataView attributed_text_rtf, double location_x, d
     return OFEncodeAttributedTextAction(OFContentMessageShowDefinition, attributed_text_rtf, location_x, location_y, out_frame);
 }
 
-bool OFEncodePageMetadata(bool start_page, const char *title_or_null, const uint8_t *icon_png_or_null, size_t icon_png_length, uint32_t icon_width, uint32_t icon_height, OFBuffer *out_frame) {
+bool OFEncodeSetTitle(const char *title_or_null, OFBuffer *out_frame) {
     OFOffsetPayloadBuilder payload = {0};
-    uint8_t flags = 0;
-    if (title_or_null) flags |= 1 << 0;
-    if (icon_png_or_null) flags |= 1 << 1;
-    bool ok = OFPayloadWriteU8(&payload, flags) &&
-              OFPayloadWriteCStringReference(&payload, title_or_null ? title_or_null : "") &&
-              OFPayloadWriteU32(&payload, icon_png_or_null ? icon_width : 0) &&
-              OFPayloadWriteU32(&payload, icon_png_or_null ? icon_height : 0) &&
-              OFPayloadWriteDataReference(&payload,
-                                          icon_png_or_null ? icon_png_or_null : (const uint8_t *)"",
-                                          icon_png_or_null ? icon_png_length : 0);
+    bool ok = OFPayloadWriteU8(&payload, title_or_null ? 1 << 0 : 0) &&
+              OFPayloadWriteCStringReference(&payload, title_or_null ? title_or_null : "");
     if (!ok) {
         OFPayloadFree(&payload);
         return false;
     }
-    return OFFinishOffsetPayload(start_page ? OFContentMessageStartPageMetadataUpdate : OFContentMessagePageMetadataUpdate, &payload, out_frame);
+    return OFFinishOffsetPayload(OFContentMessageSetTitle, &payload, out_frame);
+}
+
+bool OFEncodeSetIconBundleResource(const char *path_or_null, OFBuffer *out_frame) {
+    OFOffsetPayloadBuilder payload = {0};
+    uint8_t icon_kind = path_or_null ? 1 : 0;
+    bool ok = OFPayloadWriteU8(&payload, icon_kind) &&
+              OFPayloadWriteCStringReference(&payload, path_or_null ? path_or_null : "");
+    if (!ok) {
+        OFPayloadFree(&payload);
+        return false;
+    }
+    return OFFinishOffsetPayload(OFContentMessageSetIcon, &payload, out_frame);
 }
 
 bool OFEncodeAccessibilitySnapshotResponse(OFUUID request_id, const uint8_t *snapshot_or_null, size_t snapshot_length, OFBuffer *out_frame) {
@@ -672,41 +676,32 @@ bool OFEncodeCopySelectedPasteboardResponse(OFUUID request_id, const OFPasteboar
     return OFFinishOffsetPayload(OFContentMessageCopySelectedPasteboardResponse, &payload, out_frame);
 }
 
-bool OFEncodePasteboardCapabilities(bool can_copy, bool can_cut, const OFStringView *pasteboard_types, size_t type_count, OFBuffer *out_frame) {
-    if (type_count > UINT16_MAX) type_count = UINT16_MAX;
-    OFOffsetPayloadBuilder payload = {0};
-    uint8_t flags = 0;
-    if (can_copy) flags |= 1 << 0;
-    if (can_cut) flags |= 1 << 1;
-    bool ok = OFPayloadWriteU8(&payload, flags) &&
-              OFPayloadWriteU16(&payload, (uint16_t)type_count);
-    for (size_t i = 0; ok && i < type_count; i++) {
-        ok = OFPayloadWriteStringViewReference(&payload, pasteboard_types[i]);
-    }
+bool OFEncodeEditCommandValidationResponse(OFUUID request_id, OFEditCommandSet enabled_commands, OFBuffer *out_frame) {
+    OFByteWriter payload = {0};
+    bool ok = OFWriteUUID(&payload, request_id) &&
+              OFWriteU32(&payload, enabled_commands);
     if (!ok) {
-        OFPayloadFree(&payload);
+        OFWriterFree(&payload);
         return false;
     }
-    return OFFinishOffsetPayload(OFContentMessageEditingCapabilitiesUpdate, &payload, out_frame);
+    return OFFinishPayload(OFContentMessageEditCommandValidationResponse, &payload, out_frame);
 }
 
-bool OFEncodeTextCursorUpdate(const OFTextCursorSnapshot *cursors, size_t cursor_count, OFBuffer *out_frame) {
-    if (cursor_count > UINT32_MAX) cursor_count = UINT32_MAX;
+bool OFEncodeTextInputGeometryUpdate(const OFTextInputGeometry *geometry_or_null, OFBuffer *out_frame) {
     OFByteWriter payload = {0};
-    bool ok = OFWriteU32(&payload, (uint32_t)cursor_count);
-    for (size_t i = 0; ok && i < cursor_count; i++) {
-        ok = OFWriteUUID(&payload, cursors[i].field_id) &&
-             OFWriteF64(&payload, cursors[i].rect.origin.x) &&
-             OFWriteF64(&payload, cursors[i].rect.origin.y) &&
-             OFWriteF64(&payload, cursors[i].rect.size.width) &&
-             OFWriteF64(&payload, cursors[i].rect.size.height) &&
-             OFWriteU8(&payload, cursors[i].visible ? 1 << 0 : 0);
+    bool ok = OFWriteU8(&payload, geometry_or_null ? 1 << 0 : 0);
+    if (ok && geometry_or_null) {
+        ok = OFWriteUUID(&payload, geometry_or_null->field_id) &&
+             OFWriteF64(&payload, geometry_or_null->rect.origin.x) &&
+             OFWriteF64(&payload, geometry_or_null->rect.origin.y) &&
+             OFWriteF64(&payload, geometry_or_null->rect.size.width) &&
+             OFWriteF64(&payload, geometry_or_null->rect.size.height);
     }
     if (!ok) {
         OFWriterFree(&payload);
         return false;
     }
-    return OFFinishPayload(OFContentMessageTextCursorUpdate, &payload, out_frame);
+    return OFFinishPayload(OFContentMessageTextInputGeometryUpdate, &payload, out_frame);
 }
 
 bool OFEncodeOpenNewWindow(const char *url, const char *display_string_or_null, bool has_preferred_size, CGSize preferred_size, OFBuffer *out_frame) {

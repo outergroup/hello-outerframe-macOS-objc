@@ -245,20 +245,36 @@ void OFHostSetInputMode(OFHost *host, OFContentInputMode input_mode) {
     }
 }
 
-void OFHostUpdatePageMetadata(OFHost *host, const char *title_or_null, const uint8_t *icon_png_or_null, size_t icon_png_length, uint32_t icon_width, uint32_t icon_height) {
+void OFHostSetTitle(OFHost *host, const char *title_or_null) {
     if (!host) return;
     OFBuffer frame = {0};
-    if (OFEncodePageMetadata(false, title_or_null, icon_png_or_null, icon_png_length, icon_width, icon_height, &frame)) {
+    if (OFEncodeSetTitle(title_or_null, &frame)) {
         OFHostSendBuffer(host, &frame);
     }
 }
 
-void OFHostUpdateStartPageMetadata(OFHost *host, const char *title_or_null, const uint8_t *icon_png_or_null, size_t icon_png_length, uint32_t icon_width, uint32_t icon_height) {
+void OFHostSetIconBundleResource(OFHost *host, const char *path_or_null) {
     if (!host) return;
     OFBuffer frame = {0};
-    if (OFEncodePageMetadata(true, title_or_null, icon_png_or_null, icon_png_length, icon_width, icon_height, &frame)) {
+    if (OFEncodeSetIconBundleResource(path_or_null, &frame)) {
         OFHostSendBuffer(host, &frame);
     }
+}
+
+void OFHostUpdatePageMetadata(OFHost *host, const char *title_or_null, const uint8_t *icon_png_or_null, size_t icon_png_length, uint32_t icon_width, uint32_t icon_height) {
+    (void)icon_png_or_null;
+    (void)icon_png_length;
+    (void)icon_width;
+    (void)icon_height;
+    OFHostSetTitle(host, title_or_null);
+}
+
+void OFHostUpdateStartPageMetadata(OFHost *host, const char *title_or_null, const uint8_t *icon_png_or_null, size_t icon_png_length, uint32_t icon_width, uint32_t icon_height) {
+    (void)icon_png_or_null;
+    (void)icon_png_length;
+    (void)icon_width;
+    (void)icon_height;
+    OFHostSetTitle(host, title_or_null);
 }
 
 void OFHostShowContextMenu(OFHost *host, OFDataView attributed_text_rtf, double location_x, double location_y) {
@@ -278,28 +294,25 @@ void OFHostShowDefinition(OFHost *host, OFDataView attributed_text_rtf, double l
 }
 
 void OFHostSetPasteboardCapabilities(OFHost *host, bool can_copy, bool can_cut, const char *const *pasteboard_types, size_t type_count) {
-    if (!host) return;
-    OFStringView *views = NULL;
-    if (type_count > 0) {
-        views = calloc(type_count, sizeof(*views));
-        if (!views) return;
-        for (size_t i = 0; i < type_count; i++) {
-            const char *type = pasteboard_types[i] ?: "";
-            views[i] = (OFStringView){ .bytes = type, .length = strlen(type) };
-        }
-    }
-
-    OFBuffer frame = {0};
-    if (OFEncodePasteboardCapabilities(can_copy, can_cut, views, type_count, &frame)) {
-        OFHostSendBuffer(host, &frame);
-    }
-    free(views);
+    (void)host;
+    (void)can_copy;
+    (void)can_cut;
+    (void)pasteboard_types;
+    (void)type_count;
 }
 
 void OFHostSendCopySelectedPasteboardResponse(OFHost *host, OFUUID request_id, const OFPasteboardItemView *items, size_t item_count) {
     if (!host) return;
     OFBuffer frame = {0};
     if (OFEncodeCopySelectedPasteboardResponse(request_id, items, item_count, &frame)) {
+        OFHostSendBuffer(host, &frame);
+    }
+}
+
+void OFHostSendEditCommandValidationResponse(OFHost *host, OFUUID request_id, OFEditCommandSet enabled_commands) {
+    if (!host) return;
+    OFBuffer frame = {0};
+    if (OFEncodeEditCommandValidationResponse(request_id, enabled_commands, &frame)) {
         OFHostSendBuffer(host, &frame);
     }
 }
